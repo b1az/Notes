@@ -28,11 +28,6 @@ for epsilon = min(pval):stepsize:max(pval)
   fn = length(yval(predictions != yval & yval == 1));
   precision = tp/(tp+fp);
   recall = tp/(tp+fn);
-  if (isnan(precision))
-    printf('%i %i %i',tp,fp,fn);
-    disp("aa");
-    continue;
-  end
 
   F1 = 2*precision*recall/(precision+recall);
   % =============================================================
