@@ -1,43 +1,27 @@
 defmodule TodoServer do
   def start do
-    spawn(fn -> loop(TodoList.new()) end)
+    ServerProcess.start(TodoServer)
   end
 
   def add_entry(todo_server, new_entry) do
-    send(todo_server, {:add_entry, new_entry})
+    ServerProcess.cast(todo_server, {:put, new_entry})
   end
 
   def entries(todo_server, date) do
-    send(todo_server, {:entries, self(), date})
-
-    receive do
-      {:todo_entries, entries} -> entries
-    after
-      5000 -> {:error, :timeout}
-    end
+    ServerProcess.call(todo_server, {:get, date})
   end
 
-  ## Private
-
-  defp loop(todo_list) do
-    new_todo_list =
-      receive do
-        message -> process_message(todo_list, message)
-      end
-
-    loop(new_todo_list)
+  def init do
+    TodoList.new()
   end
 
-  defp process_message(todo_list, {:add_entry, new_entry}) do
-    TodoList.add_entry(todo_list, new_entry)
+  def handle_cast({:put, new_entry}, state) do
+    TodoList.add_entry(state, new_entry)
   end
 
-  defp process_message(todo_list, {:entries, caller, date}) do
-    send(caller, {:todo_entries, TodoList.entries(todo_list, date)})
-    todo_list
+  def handle_call({:get, date}, state) do
+    {TodoList.entries(state, date), state}
   end
-
-  defp process_message(todo_list, _), do: todo_list
 end
 
 defmodule TodoList do
@@ -82,5 +66,49 @@ defmodule TodoList do
 
   def delete_entry(todo_list, entry_id) do
     %TodoList{todo_list | entries: Map.delete(todo_list.entries, entry_id)}
+  end
+end
+
+defmodule ServerProcess do
+  def start(callback_module) do
+    spawn(fn ->
+      initial_state = callback_module.init()
+      loop(callback_module, initial_state)
+    end)
+  end
+
+  defp loop(callback_module, current_state) do
+    receive do
+      {:call, request, caller} ->
+        {response, new_state} =
+          callback_module.handle_call(
+            request,
+            current_state
+            )
+
+        send(caller, {:response, response})
+        loop(callback_module, new_state)
+
+      {:cast, request} ->
+        new_state =
+          callback_module.handle_cast(
+            request,
+            current_state
+            )
+
+        loop(callback_module, new_state)
+    end
+  end
+
+  def call(server_pid, request) do
+    send(server_pid, {:call, request, self()})
+
+    receive do
+      {:response, response} ->
+        response
+    end
+  end
+  def cast(pid, request) do
+    send(pid, {:cast, request})
   end
 end
